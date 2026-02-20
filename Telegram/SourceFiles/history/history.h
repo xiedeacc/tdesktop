@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_drafts.h"
 #include "data/data_thread.h"
 #include "history/view/history_view_send_action.h"
+#include "msg_filter/msg_filter.h"
 #include "base/variant.h"
 #include "base/flat_set.h"
 #include "base/flags.h"
@@ -466,6 +467,8 @@ public:
 	PeerId lastKeyboardFrom = 0;
 
 	mtpRequestId sendRequestId = 0;
+
+	static void applyMsgFilter(not_null<HistoryItem*> item);
 
 private:
 	friend class HistoryBlock;

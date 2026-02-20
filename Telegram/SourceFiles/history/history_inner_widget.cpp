@@ -63,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_interactions.h"
 #include "history/history_widget.h"
 #include "history/view/history_view_translate_tracker.h"
+#include "msg_filter/msg_filter.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_common_adapters.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -2813,10 +2814,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							[=] { _menu = nullptr; }));
 					}
 				}
-				if (!blockSender && item->suggestReport()) {
-					_menu->addAction(tr::lng_context_report_msg(tr::now), [=] {
-						reportItem(itemId);
-					}, &st::menuIconReport);
+			if (!blockSender && item->suggestReport()) {
+				_menu->addAction(tr::lng_context_report_msg(tr::now), [=] {
+					reportItem(itemId);
+				}, &st::menuIconReport);
+			}
+				if (item->isRegular()) {
+					_menu->addAction(u"Mark as Garbage"_q, [=] {
+						if (const auto item = session->data().message(itemId)) {
+							MsgFilter::Instance().appendToFilter(item);
+						}
+					}, &st::menuIconDelete);
 				}
 			}
 			addSelectMessageAction(item);
@@ -3064,10 +3072,17 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							[=] { _menu = nullptr; }));
 					}
 				}
-				if (!canBlockSender && canReport) {
-					_menu->addAction(tr::lng_context_report_msg(tr::now), [=] {
-						reportAsGroup(itemId);
-					}, &st::menuIconReport);
+			if (!canBlockSender && canReport) {
+				_menu->addAction(tr::lng_context_report_msg(tr::now), [=] {
+					reportAsGroup(itemId);
+				}, &st::menuIconReport);
+			}
+				if (item->isRegular()) {
+					_menu->addAction(u"Mark as Garbage"_q, [=] {
+						if (const auto item = session->data().message(itemId)) {
+							MsgFilter::Instance().appendToFilter(item);
+						}
+					}, &st::menuIconDelete);
 				}
 			}
 			addSelectMessageAction(partItemOrLeader);

@@ -49,6 +49,7 @@ public:
 
 		QDateTime date;
 		QString author;
+		MsgId msgId = 0;
 		EffectId effectId = 0;
 		int stars = 0;
 		std::optional<int> views;

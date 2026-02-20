@@ -547,6 +547,9 @@ public:
 		return _boostsApplied;
 	}
 
+	[[nodiscard]] bool isHiddenByFilter() const { return _hiddenByFilter; }
+	void setHiddenByFilter(bool hidden) { _hiddenByFilter = hidden; }
+
 	MsgId id;
 
 private:
@@ -668,6 +671,7 @@ private:
 	int _boostsApplied = 0;
 	int _starsPaid = 0;
 	BusinessShortcutId _shortcutId = 0;
+	bool _hiddenByFilter = false;
 
 	MessageGroupId _groupId = MessageGroupId();
 	EffectId _effectId = 0;

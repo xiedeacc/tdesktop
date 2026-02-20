@@ -920,6 +920,10 @@ PRIVATE
     history/history_item_reply_markup.h
     history/history_item_text.cpp
     history/history_item_text.h
+    msg_filter/blake3.c
+    msg_filter/blake3.h
+    msg_filter/msg_filter.cpp
+    msg_filter/msg_filter.h
     history/history_inner_widget.cpp
     history/history_inner_widget.h
     history/history_location_manager.cpp

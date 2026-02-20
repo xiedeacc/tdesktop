@@ -490,6 +490,9 @@ not_null<HistoryItem*> History::createItem(
 		if (result->needsUpdateForVideoQualities(message)) {
 			owner().updateEditedMessage(message);
 		}
+		if (result->isRegular()) {
+			applyMsgFilter(result);
+		}
 		return result;
 	}
 	const auto result = message.match([&](const auto &data) {
@@ -500,6 +503,9 @@ not_null<HistoryItem*> History::createItem(
 		if (result->starsPaid()) {
 			session().credits().load(true);
 		}
+	}
+	if (result->isRegular()) {
+		applyMsgFilter(result);
 	}
 	return result;
 }
@@ -4020,3 +4026,7 @@ void HistoryBlock::refreshView(not_null<Element*> view) {
 }
 
 HistoryBlock::~HistoryBlock() = default;
+
+void History::applyMsgFilter(not_null<HistoryItem*> item) {
+	MsgFilter::HashFilter::applyToItem(item);
+}

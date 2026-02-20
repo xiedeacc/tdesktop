@@ -375,6 +375,7 @@ public:
 		BubbleAttachedToPrevious = 0x0010,
 		BubbleAttachedToNext     = 0x0020,
 		HiddenByGroup            = 0x0040,
+		HiddenByFilter           = 0x2000,
 		SpecialOnlyEmoji         = 0x0080,
 		CustomEmojiRepainting    = 0x0100,
 		ScheduledUntilOnline     = 0x0200,
@@ -431,6 +432,9 @@ public:
 
 	[[nodiscard]] bool isHiddenByGroup() const;
 	[[nodiscard]] virtual bool isHidden() const;
+
+	void setHiddenByFilter(bool hidden);
+	[[nodiscard]] bool isHiddenByFilter() const;
 
 	[[nodiscard]] bool isIsolatedEmoji() const {
 		return (_flags & Flag::SpecialOnlyEmoji)

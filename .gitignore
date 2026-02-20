@@ -53,3 +53,5 @@ stage
 *.*~
 .idea/
 cmake-build-debug/
+/build/
+build_log.txt

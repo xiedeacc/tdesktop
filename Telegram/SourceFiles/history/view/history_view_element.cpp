@@ -727,7 +727,8 @@ Element::Element(
 	| (IsItemScheduledUntilOnline(data)
 		? Flag::ScheduledUntilOnline
 		: Flag())
-	| (countIsTopicRootReply() ? Flag::TopicRootReply : Flag()))
+	| (countIsTopicRootReply() ? Flag::TopicRootReply : Flag())
+	| (data->isHiddenByFilter() ? Flag::HiddenByFilter : Flag()))
 , _context(delegate->elementContext()) {
 	history()->owner().registerItemView(this);
 	refreshMedia(replacing);
@@ -959,7 +960,19 @@ bool Element::isHiddenByGroup() const {
 }
 
 bool Element::isHidden() const {
-	return isHiddenByGroup();
+	return isHiddenByGroup() || data()->isHiddenByFilter();
+}
+
+void Element::setHiddenByFilter(bool hidden) {
+	if (hidden) {
+		_flags |= Flag::HiddenByFilter;
+	} else {
+		_flags &= ~Flag::HiddenByFilter;
+	}
+}
+
+bool Element::isHiddenByFilter() const {
+	return (_flags & Flag::HiddenByFilter);
 }
 
 void Element::overrideMedia(std::unique_ptr<Media> media) {

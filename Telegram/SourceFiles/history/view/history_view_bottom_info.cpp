@@ -427,13 +427,16 @@ void BottomInfo::layoutDateText() {
 	const auto name = _authorElided
 		? st::msgDateFont->elided(author, maxWidth - afterAuthorWidth)
 		: author;
+	const auto idStr = _data.msgId
+		? (u"#"_q + QString::number(_data.msgId.bare) + u" "_q)
+		: QString();
 	const auto full = (_data.flags & Data::Flag::Sponsored)
 		? QString()
 		: (_data.flags & Data::Flag::Imported)
 		? (date + ' ' + tr::lng_imported(tr::now))
 		: name.isEmpty()
-		? date
-		: (name + afterAuthor);
+		? (idStr + date)
+		: (idStr + name + afterAuthor);
 	auto marked = TextWithEntities();
 	if (const auto count = _data.stars) {
 		marked.append(
@@ -568,6 +571,7 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 
 	auto result = BottomInfo::Data();
 	result.date = message->dateTime();
+	result.msgId = item->id;
 	result.effectId = item->effectId();
 	if (message->hasOutLayout()) {
 		result.flags |= Flag::OutLayout;

@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "platform/platform_integration.h"
 #include "history/history.h"
+#include "msg_filter/msg_filter.h"
 #include "apiwrap.h"
 #include "api/api_updates.h"
 #include "calls/calls_instance.h"
@@ -808,6 +809,9 @@ void Application::startLocalStorage() {
 	settings().saveDelayedRequests() | rpl::start_with_next([=] {
 		saveSettingsDelayed();
 	}, _lifetime);
+
+	// Load MD5 filter at startup
+	MsgFilter::Instance().loadFromDefaultLocation();
 }
 
 void Application::startEmojiImageLoader() {
