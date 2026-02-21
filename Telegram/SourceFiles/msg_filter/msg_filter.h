@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryItem;
 class PhotoData;
+class DocumentData;
 
 namespace Data {
 class PhotoMedia;
@@ -26,6 +27,8 @@ public:
 	void loadFromFile(const QString &path);
 
 	[[nodiscard]] bool shouldHideByText(const QString &text) const;
+	[[nodiscard]] bool shouldHideByPhotoId(uint64 photoId) const;
+	[[nodiscard]] bool shouldHideByDocId(uint64 docId) const;
 	[[nodiscard]] bool shouldHideByHash(const QByteArray &blake3hex) const;
 	[[nodiscard]] bool shouldHideByBytes(const QByteArray &bytes) const;
 
@@ -48,6 +51,8 @@ private:
 	void appendEntry(const QString &line);
 	void watchSession(not_null<Main::Session*> session);
 
+	base::flat_set<uint64> _photoIds;
+	base::flat_set<uint64> _docIds;
 	base::flat_set<QByteArray> _blake3Hashes;
 	base::flat_set<QString> _texts;
 	std::vector<PendingCheck> _pendingChecks;

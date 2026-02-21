@@ -109,7 +109,10 @@ HashFilter &Instance() {
 }
 
 bool HashFilter::empty() const {
-	return _blake3Hashes.empty() && _texts.empty();
+	return _blake3Hashes.empty()
+		&& _texts.empty()
+		&& _photoIds.empty()
+		&& _docIds.empty();
 }
 
 void HashFilter::loadFromDefaultLocation() {
@@ -117,6 +120,8 @@ void HashFilter::loadFromDefaultLocation() {
 }
 
 void HashFilter::loadFromFile(const QString &path) {
+	_photoIds.clear();
+	_docIds.clear();
 	_blake3Hashes.clear();
 	_texts.clear();
 	_pendingChecks.clear();
@@ -133,7 +138,19 @@ void HashFilter::loadFromFile(const QString &path) {
 		if (raw.isEmpty() || raw.startsWith('#')) {
 			continue;
 		}
-		if (raw.startsWith(u"blake3:"_q)) {
+		if (raw.startsWith(u"photoid:"_q)) {
+			auto ok = false;
+			const auto id = raw.mid(8).toULongLong(&ok);
+			if (ok && id) {
+				_photoIds.emplace(id);
+			}
+		} else if (raw.startsWith(u"docid:"_q)) {
+			auto ok = false;
+			const auto id = raw.mid(6).toULongLong(&ok);
+			if (ok && id) {
+				_docIds.emplace(id);
+			}
+		} else if (raw.startsWith(u"blake3:"_q)) {
 			_blake3Hashes.emplace(raw.mid(7).toLower().toLatin1());
 		} else if (raw.startsWith(u"text:"_q)) {
 			_texts.emplace(UnescapeText(raw.mid(5)));
@@ -143,7 +160,9 @@ void HashFilter::loadFromFile(const QString &path) {
 			_texts.emplace(raw);
 		}
 	}
-	DebugLog(u"[LOAD] Loaded %1 hashes + %2 texts from %3"_q
+	DebugLog(u"[LOAD] Loaded %1 photoIds + %2 docIds + %3 hashes + %4 texts from %5"_q
+		.arg(_photoIds.size())
+		.arg(_docIds.size())
 		.arg(_blake3Hashes.size())
 		.arg(_texts.size())
 		.arg(path));
@@ -151,6 +170,14 @@ void HashFilter::loadFromFile(const QString &path) {
 
 bool HashFilter::shouldHideByText(const QString &text) const {
 	return !text.isEmpty() && _texts.contains(text);
+}
+
+bool HashFilter::shouldHideByPhotoId(uint64 photoId) const {
+	return photoId && _photoIds.contains(photoId);
+}
+
+bool HashFilter::shouldHideByDocId(uint64 docId) const {
+	return docId && _docIds.contains(docId);
 }
 
 bool HashFilter::shouldHideByHash(const QByteArray &blake3hex) const {
@@ -188,58 +215,22 @@ void HashFilter::appendToFilter(not_null<HistoryItem*> item) {
 		appended = true;
 	}
 
-	if (photo) {
-		const auto origin = Data::FileOrigin(item->fullId());
-		auto mediaView = photo->createMediaView();
-		photo->load(Data::PhotoSize::Large, origin);
-		const auto bytes = mediaView->imageBytes(Data::PhotoSize::Large);
-		if (!bytes.isEmpty()) {
-			const auto hash = ComputeBlake3(bytes);
-			appendEntry(u"blake3:"_q + QString::fromLatin1(hash));
-			_blake3Hashes.emplace(hash);
-			DebugLog(u"[APPEND] msgId=%1 type=photo blake3=%2"_q
-				.arg(item->fullId().msg.bare)
-				.arg(QString::fromLatin1(hash)));
-			appended = true;
-		} else {
-			DebugLog(u"[APPEND] msgId=%1 photo bytes not ready, queuing"_q
-				.arg(item->fullId().msg.bare));
-			_pendingChecks.push_back({
-				.itemId = item->fullId(),
-				.mediaView = std::move(mediaView),
-			});
-			watchSession(&item->history()->session());
-		}
+	if (photo && photo->id) {
+		appendEntry(u"photoid:"_q + QString::number(photo->id));
+		_photoIds.emplace(photo->id);
+		DebugLog(u"[APPEND] msgId=%1 type=photo photoid=%2"_q
+			.arg(item->fullId().msg.bare)
+			.arg(photo->id));
+		appended = true;
 	}
 
-	if (document && document->isVideoFile()) {
-		if (const auto cover = media->videoCover()) {
-			const auto origin = Data::FileOrigin(item->fullId());
-			auto coverView = cover->createMediaView();
-			cover->load(Data::PhotoSize::Large, origin);
-			const auto bytes = coverView->imageBytes(
-				Data::PhotoSize::Large);
-			if (!bytes.isEmpty()) {
-				const auto hash = ComputeBlake3(bytes);
-				appendEntry(u"blake3:"_q + QString::fromLatin1(hash));
-				_blake3Hashes.emplace(hash);
-				DebugLog(u"[APPEND] msgId=%1 type=video_cover blake3=%2"_q
-					.arg(item->fullId().msg.bare)
-					.arg(QString::fromLatin1(hash)));
-				appended = true;
-			} else {
-				DebugLog(u"[APPEND] msgId=%1 video cover bytes not ready, queuing"_q
-					.arg(item->fullId().msg.bare));
-				_pendingChecks.push_back({
-					.itemId = item->fullId(),
-					.mediaView = std::move(coverView),
-				});
-				watchSession(&item->history()->session());
-			}
-		} else {
-			DebugLog(u"[APPEND] msgId=%1 video has no cover, skipping"_q
-				.arg(item->fullId().msg.bare));
-		}
+	if (document && document->id) {
+		appendEntry(u"docid:"_q + QString::number(document->id));
+		_docIds.emplace(document->id);
+		DebugLog(u"[APPEND] msgId=%1 type=doc docid=%2"_q
+			.arg(item->fullId().msg.bare)
+			.arg(document->id));
+		appended = true;
 	}
 
 	if (appended) {
@@ -256,16 +247,14 @@ void HashFilter::applyToItem(not_null<HistoryItem*> item) {
 	const auto msgId = item->fullId();
 	const auto &text = item->originalText().text;
 	const auto media = item->media();
-	const auto hasPhoto = media && media->photo();
-	const auto hasVideo = media
-		&& media->document()
-		&& media->document()->isVideoFile();
+	const auto photo = media ? media->photo() : nullptr;
+	const auto document = media ? media->document() : nullptr;
 
-	DebugLog(u"[CHECK] msgId=%1 peer=%2 hasPhoto=%3 hasVideo=%4 text=\"%5\""_q
+	DebugLog(u"[CHECK] msgId=%1 peer=%2 photoId=%3 docId=%4 text=\"%5\""_q
 		.arg(msgId.msg.bare)
 		.arg(msgId.peer.value)
-		.arg(hasPhoto)
-		.arg(hasVideo)
+		.arg(photo ? photo->id : 0)
+		.arg(document ? document->id : 0)
 		.arg(text.left(40).replace('\n', ' ')));
 
 	if (filter.shouldHideByText(text)) {
@@ -275,13 +264,30 @@ void HashFilter::applyToItem(not_null<HistoryItem*> item) {
 		return;
 	}
 
-	if (hasPhoto) {
-		filter.schedulePhotoCheck(item, media->photo());
+	if (photo && filter.shouldHideByPhotoId(photo->id)) {
+		DebugLog(u"[HIDE] msgId=%1 reason=photoid_match id=%2"_q
+			.arg(msgId.msg.bare)
+			.arg(photo->id));
+		HideItem(item);
+		return;
 	}
 
-	if (hasVideo) {
-		if (const auto cover = media->videoCover()) {
-			filter.schedulePhotoCheck(item, cover);
+	if (document && filter.shouldHideByDocId(document->id)) {
+		DebugLog(u"[HIDE] msgId=%1 reason=docid_match id=%2"_q
+			.arg(msgId.msg.bare)
+			.arg(document->id));
+		HideItem(item);
+		return;
+	}
+
+	if (!filter._blake3Hashes.empty()) {
+		if (photo) {
+			filter.schedulePhotoCheck(item, photo);
+		}
+		if (document && document->isVideoFile()) {
+			if (const auto cover = media->videoCover()) {
+				filter.schedulePhotoCheck(item, cover);
+			}
 		}
 	}
 }
