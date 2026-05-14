@@ -1027,11 +1027,17 @@ void AddMarkAsGarbageAction(
 	if (!item || !item->isRegular() || !request.selectedItems.empty()) {
 		return;
 	}
+	// The filter only operates on group / channel conversations, so the
+	// action would be a no-op in 1-on-1 chats — hide it there.
+	const auto peer = item->history()->peer;
+	if (!peer->isChat() && !peer->isChannel()) {
+		return;
+	}
 	const auto owner = &item->history()->owner();
 	const auto itemId = item->fullId();
 	menu->addAction(u"Mark as Garbage"_q, [=] {
 		if (const auto item = owner->message(itemId)) {
-			MsgFilter::Instance().appendToFilter(item);
+			MsgFilter::HashFilter::Instance().appendToFilter(item);
 		}
 	}, &st::menuIconDelete);
 }

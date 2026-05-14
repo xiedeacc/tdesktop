@@ -43,6 +43,7 @@ namespace Ui {
 class IconButton;
 class PopupMenu;
 class FlatLabel;
+class InfiniteRadialAnimation;
 struct ScrollToRequest;
 namespace Controls {
 enum class QuickDialogAction;
@@ -679,6 +680,14 @@ private:
 	bool _searchWaiting = false;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
+
+	// Live state from MsgFilter::BackgroundScanner so we can draw the
+	// "scanning" badge plus a marker on the row that is currently being
+	// inspected. The spinner is lazily constructed while a scan is in
+	// flight and torn down when the scan completes.
+	bool _scannerRunning = false;
+	PeerId _scannerCurrentPeer;
+	std::unique_ptr<Ui::InfiniteRadialAnimation> _scannerSpinner;
 
 };
 

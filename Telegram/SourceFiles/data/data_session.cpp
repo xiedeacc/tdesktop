@@ -6,6 +6,10 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtCore/QFile>
 
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -2242,6 +2246,24 @@ MessageIdsList Session::itemOrItsGroup(not_null<HistoryItem*> item) const {
 	return { 1, item->fullId() };
 }
 
+void Session::loadExtraPinnedChats() {
+	if (_extraPinnedChatsLoaded) return;
+	_extraPinnedChatsLoaded = true;
+	QFile file(_session->local().basePath() + "pinned_chats.json");
+	if (file.open(QIODevice::ReadOnly)) {
+		QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+		QJsonArray arr = doc.object()["extra_pinned"].toArray();
+		for (const auto &val : arr) {
+			QString str = val.toString();
+			if (!str.startsWith("peer:") && !str.startsWith("folder:")) {
+				str = "peer:" + str; // backwards compatibility
+			}
+			_extraPinnedChats.push_back(str);
+		}
+	}
+}
+
+
 void Session::setChatPinned(
 		Dialogs::Key key,
 		FilterId filterId,
@@ -2284,6 +2306,24 @@ void Session::applyPinnedChats(
 		});
 	}
 	chatsList(folder)->pinned()->applyList(this, list);
+	
+	if (!folder) {
+		loadExtraPinnedChats();
+		for (const auto &str : _extraPinnedChats) {
+			if (str.startsWith("peer:")) {
+				PeerId peerId(str.mid(5).toULongLong());
+				if (const auto history = this->historyLoaded(peerId)) {
+					chatsList(folder)->pinned()->addPinned(history);
+				}
+			} else if (str.startsWith("folder:")) {
+				int folderId = str.mid(7).toInt();
+				if (const auto f = this->folderLoaded(folderId)) {
+					chatsList(folder)->pinned()->addPinned(f);
+				}
+			}
+		}
+	}
+	
 	notifyPinnedDialogsOrderUpdated();
 }
 
@@ -2320,7 +2360,14 @@ void Session::applyDialog(
 
 	const auto history = this->history(peerId);
 	history->applyDialog(requestFolder, data);
-	setPinnedFromEntryList(history, data.is_pinned());
+	
+	bool isExtraPinned = false;
+	if (!requestFolder) {
+		loadExtraPinnedChats();
+		QString peerStr = "peer:" + QString::number(peerId.value);
+		isExtraPinned = (std::find(_extraPinnedChats.begin(), _extraPinnedChats.end(), peerStr) != _extraPinnedChats.end());
+	}
+	setPinnedFromEntryList(history, data.is_pinned() || isExtraPinned);
 
 	if (const auto from = history->peer->migrateFrom()) {
 		if (const auto historyFrom = historyLoaded(from)) {
@@ -2341,7 +2388,14 @@ void Session::applyDialog(
 	}
 	const auto folder = processFolder(data.vfolder());
 	folder->applyDialog(data);
-	setPinnedFromEntryList(folder, data.is_pinned());
+	
+	bool isExtraPinned = false;
+	if (!requestFolder) {
+		loadExtraPinnedChats();
+		QString folderStr = "folder:" + QString::number(folder->id());
+		isExtraPinned = (std::find(_extraPinnedChats.begin(), _extraPinnedChats.end(), folderStr) != _extraPinnedChats.end());
+	}
+	setPinnedFromEntryList(folder, data.is_pinned() || isExtraPinned);
 }
 
 bool Session::pinnedCanPin(not_null<Dialogs::Entry*> entry) const {

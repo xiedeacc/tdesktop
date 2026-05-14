@@ -922,6 +922,14 @@ PRIVATE
     history/history_item_text.h
     msg_filter/blake3.c
     msg_filter/blake3.h
+    msg_filter/blake3.c
+    msg_filter/blake3.h
+    msg_filter/cpu_sampler.cpp
+    msg_filter/cpu_sampler.h
+    msg_filter/background_scanner.cpp
+    msg_filter/background_scanner.h
+    msg_filter/cleanup.cpp
+    msg_filter/cleanup.h
     msg_filter/msg_filter.cpp
     msg_filter/msg_filter.h
     history/history_inner_widget.cpp

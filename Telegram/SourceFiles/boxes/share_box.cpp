@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/share_box.h"
 
 #include "api/api_premium.h"
+#include "api/api_sending.h"
 #include "base/random.h"
 #include "lang/lang_keys.h"
 #include "base/qthelp_url.h"
@@ -40,6 +41,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/share_message_phrase_factory.h"
 #include "data/business/data_shortcut_messages.h"
 #include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_document.h"
+#include "data/data_media_types.h"
+#include "data/data_photo.h"
 #include "data/data_chat_filters.h"
 #include "data/data_game.h"
 #include "data/data_histories.h"
@@ -1700,6 +1705,74 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 			show->showBox(MakeSendErrorBox(error, result.size() > 1));
 			return;
 		} else if (!checkPaid()) {
+			return;
+		}
+
+		const auto sourcePeer = history->peer;
+		auto sourceRestricted = false;
+		if (const auto channel = sourcePeer->asChannel()) {
+			sourceRestricted = !channel->allowsForwarding();
+		} else if (const auto chat = sourcePeer->asChat()) {
+			sourceRestricted = !chat->allowsForwarding();
+		}
+
+		if (sourceRestricted) {
+			auto &api = history->owner().session().api();
+			for (const auto thread : result) {
+				if (!comment.text.isEmpty()) {
+					auto message = Api::MessageToSend(
+						Api::SendAction(thread, options));
+					message.textWithTags = comment;
+					message.action.clearDraft = false;
+					api.sendMessage(std::move(message));
+				}
+				for (const auto &item : items) {
+					const auto media = item->media();
+					const auto photo = media
+						? media->photo()
+						: nullptr;
+					const auto document = media
+						? media->document()
+						: nullptr;
+
+					auto message = Api::MessageToSend(
+						Api::SendAction(thread, options));
+					message.action.clearDraft = false;
+
+					const auto dropCaption = (forwardOptions
+						== Data::ForwardOptions::NoNamesAndCaptions);
+					if (!dropCaption) {
+						const auto &original = item->originalText();
+						message.textWithTags = TextWithTags{
+							original.text,
+							TextUtilities::ConvertEntitiesToTextTags(
+								original.entities),
+						};
+					}
+
+					if (photo) {
+						Api::SendExistingPhoto(
+							std::move(message),
+							photo);
+					} else if (document) {
+						Api::SendExistingDocument(
+							std::move(message),
+							document);
+					} else if (!message.textWithTags.text.isEmpty()) {
+						api.sendMessage(std::move(message));
+					}
+				}
+			}
+			const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
+				result,
+				msgIds);
+			if (show->valid()) {
+				auto phrase = rpl::variable<TextWithEntities>(
+					ChatHelpers::ForwardedMessagePhrase(
+						donePhraseArgs)).current();
+				show->showToast(std::move(phrase));
+				show->hideLayer();
+			}
 			return;
 		}
 

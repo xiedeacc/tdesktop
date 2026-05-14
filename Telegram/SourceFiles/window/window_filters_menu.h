@@ -22,6 +22,8 @@ class VerticalLayout;
 class VerticalLayoutReorder;
 enum class FilterIcon : uchar;
 class PopupMenu;
+class AbstractButton;
+class InfiniteRadialAnimation;
 } // namespace Ui
 
 namespace Window {
@@ -52,6 +54,8 @@ private:
 		Ui::FilterIcon icon,
 		bool toBeginning = false);
 	void setupMainMenuIcon();
+	void setupScanIndicator();
+	void updateScanIndicatorGeometry();
 	void showMenu(QPoint position, FilterId id);
 	void scrollToButton(not_null<Ui::RpWidget*> widget);
 	void openFiltersSettings();
@@ -84,6 +88,14 @@ private:
 	} _drag;
 
 	Ui::Animations::Simple _scrollToAnimation;
+
+	// MsgFilter background-scanner indicator: a button pinned to the
+	// bottom of the vertical sidebar. Visible only while a sweep is in
+	// progress; shows a radial spinner alongside "TaskRunning" text and
+	// a click reveals scan progress as a toast.
+	base::unique_qptr<Ui::AbstractButton> _scanIndicator;
+	std::unique_ptr<Ui::InfiniteRadialAnimation> _scanSpinner;
+	bool _scanRunning = false;
 
 };
 

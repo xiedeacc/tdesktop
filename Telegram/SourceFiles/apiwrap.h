@@ -578,6 +578,11 @@ private:
 		not_null<SendingAlbum*> album,
 		Fn<void(bool)> done = nullptr);
 
+	void copyForwardItem(
+		not_null<HistoryItem*> item,
+		const SendAction &action,
+		Data::ForwardOptions options);
+
 	void sendNotifySettingsUpdates();
 
 	template <typename Request>

@@ -53,6 +53,10 @@ public:
 	[[nodiscard]] int dialogsPinnedPremium() const;
 	[[nodiscard]] int dialogsPinnedCurrent() const;
 
+	[[nodiscard]] int dialogsPinnedOfficialDefault() const;
+	[[nodiscard]] int dialogsPinnedOfficialPremium() const;
+	[[nodiscard]] int dialogsPinnedOfficialCurrent() const;
+
 	[[nodiscard]] int dialogsFolderPinnedDefault() const;
 	[[nodiscard]] int dialogsFolderPinnedPremium() const;
 	[[nodiscard]] int dialogsFolderPinnedCurrent() const;

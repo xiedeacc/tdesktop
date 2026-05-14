@@ -35,8 +35,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_media_prepare.h"
 #include "api/api_chat_filters.h"
 #include "apiwrap.h"
+#include "msg_filter/background_scanner.h"
+#include "ui/effects/radial_animation.h"
+#include "ui/widgets/buttons.h"
+#include "ui/painter.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_chat.h"
 #include "styles/style_layers.h" // attentionBoxButton
 #include "styles/style_menu_icons.h"
 
@@ -66,6 +72,7 @@ FiltersMenu::~FiltersMenu() = default;
 
 void FiltersMenu::setup() {
 	setupMainMenuIcon();
+	setupScanIndicator();
 
 	_outer.setAttribute(Qt::WA_OpaquePaintEvent);
 	_outer.show();
@@ -83,10 +90,20 @@ void FiltersMenu::setup() {
 		_outer.setGeometry({ 0, 0, width, height });
 		_menu.resizeToWidth(width);
 		_menu.move(0, 0);
-		_scroll.setGeometry(
-			{ 0, _menu.height(), width, height - _menu.height() });
+		// The scan indicator is always visible at the bottom, so we
+		// reserve its height unconditionally.
+		const auto bottom = _scanIndicator
+			? _scanIndicator->height()
+			: 0;
+		_scroll.setGeometry({
+			0,
+			_menu.height(),
+			width,
+			std::max(0, height - _menu.height() - bottom),
+		});
 		_container->resizeToWidth(width);
 		_container->move(0, 0);
+		updateScanIndicatorGeometry();
 	}, _outer.lifetime());
 
 	auto premium = Data::AmPremiumValue(&_session->session());
@@ -124,6 +141,116 @@ void FiltersMenu::setup() {
 	_menu.setClickedCallback([=] {
 		_session->widget()->showMainMenu();
 	});
+}
+
+void FiltersMenu::setupScanIndicator() {
+	using AbstractButton = Ui::AbstractButton;
+	_scanIndicator = base::make_unique_q<AbstractButton>(&_outer);
+	const auto raw = _scanIndicator.get();
+	raw->resize(st::windowFiltersWidth, st::windowFiltersWidth);
+	// Always visible: idle and running both render distinctly so
+	// users can confirm the wiring without timing the brief sweep.
+	raw->show();
+
+	raw->paintRequest(
+	) | rpl::start_with_next([=] {
+		auto p = QPainter(raw);
+		auto hq = PainterHighQualityEnabler(p);
+		const auto w = raw->width();
+		const auto h = raw->height();
+		const auto pad = style::ConvertScale(6);
+		const auto inner = QRectF(pad, pad, w - pad * 2, h - pad * 2);
+		const auto radius = std::min(inner.width(), inner.height()) / 4.;
+		// Idle: vivid accent so the affordance is obvious.
+		// Running: muted grey to communicate "busy, do not click".
+		auto bg = _scanRunning
+			? st::windowSubTextFg->c
+			: st::msgFileInBg->c;
+		if (_scanRunning) {
+			bg.setAlphaF(0.55);
+		}
+		p.setPen(Qt::NoPen);
+		p.setBrush(bg);
+		p.drawRoundedRect(inner, radius, radius);
+
+		// Spinner only while running; the idle state is just the label
+		// so the user has a clean, button-shaped affordance.
+		const auto spin = st::dialogsLoadMoreLoading.size;
+		const auto spinX = (w - spin.width()) / 2;
+		const auto spinY = inner.top() + style::ConvertScale(6);
+		if (_scanRunning && _scanSpinner) {
+			_scanSpinner->draw(
+				p,
+				QPoint(spinX, qRound(spinY)),
+				spin,
+				w);
+		}
+
+		p.setPen(st::historyFileInIconFg);
+		p.setFont(st::semiboldFont);
+		const auto label = u"AdScan"_q;
+		const auto fm = p.fontMetrics();
+		const auto textWidth = fm.horizontalAdvance(label);
+		const auto textX = (w - textWidth) / 2;
+		const auto textY = _scanRunning
+			? spinY + spin.height() + style::ConvertScale(4) + fm.ascent()
+			: qRound(
+				inner.top()
+				+ (inner.height() + fm.ascent() - fm.descent()) / 2.);
+		p.drawText(QPointF(textX, textY), label);
+	}, raw->lifetime());
+
+	raw->setClickedCallback([=] {
+		auto &s = MsgFilter::BackgroundScanner::Instance();
+		// Disabled while running; we still belt-and-brace here in case
+		// the running flag flips between event delivery and dispatch.
+		if (s.running()) {
+			return;
+		}
+		_session->showToast(u"Triggering full ad scan…"_q);
+		s.runFullNow();
+	});
+
+	auto &scanner = MsgFilter::BackgroundScanner::Instance();
+	const auto apply = [=](bool running) {
+		_scanRunning = running;
+		if (running) {
+			if (!_scanSpinner) {
+				_scanSpinner
+					= std::make_unique<Ui::InfiniteRadialAnimation>(
+						[=] { raw->update(); },
+						st::dialogsLoadMoreLoading);
+			}
+			_scanSpinner->start();
+		} else if (_scanSpinner) {
+			_scanSpinner->stop();
+		}
+		// While scanning the button is purely informational: block
+		// mouse interaction and drop the pointer cursor affordance.
+		raw->setAttribute(Qt::WA_TransparentForMouseEvents, running);
+		raw->setCursor(running ? Qt::ArrowCursor : Qt::PointingHandCursor);
+		raw->update();
+		updateScanIndicatorGeometry();
+	};
+	apply(scanner.running());
+	scanner.runningChanges(
+	) | rpl::start_with_next([=](bool running) {
+		apply(running);
+	}, _outer.lifetime());
+	scanner.currentPeerChanges(
+	) | rpl::start_with_next([=](PeerId) {
+		raw->update();
+	}, _outer.lifetime());
+}
+
+void FiltersMenu::updateScanIndicatorGeometry() {
+	if (!_scanIndicator) {
+		return;
+	}
+	const auto width = _outer.width();
+	const auto height = _outer.height();
+	const auto h = _scanIndicator->height();
+	_scanIndicator->setGeometry(0, height - h, width, h);
 }
 
 void FiltersMenu::setupMainMenuIcon() {

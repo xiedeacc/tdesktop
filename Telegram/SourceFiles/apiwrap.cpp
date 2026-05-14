@@ -6,6 +6,10 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "apiwrap.h"
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtCore/QFile>
 
 #include "api/api_authorizations.h"
 #include "api/api_attached_stickers.h"
@@ -46,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_saved_sublist.h"
 #include "data/data_search_controller.h"
 #include "data/data_session.h"
+#include "data/data_premium_limits.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
@@ -346,11 +351,44 @@ void ApiWrap::savePinnedOrder(Data::Folder *folder) {
 		Unexpected("Key type in pinnedDialogsOrder().");
 	};
 	auto peers = QVector<MTPInputDialogPeer>();
-	peers.reserve(order.size());
-	ranges::transform(
-		order,
-		ranges::back_inserter(peers),
-		input);
+	
+	int officialLimit = order.size();
+	if (!folder) {
+		officialLimit = Data::PremiumLimits(_session).dialogsPinnedOfficialCurrent();
+	}
+	
+	int sendCount = std::min(int(order.size()), officialLimit);
+	peers.reserve(sendCount);
+	
+	for (int i = 0; i < sendCount; ++i) {
+		peers.push_back(input(order[i]));
+	}
+	
+	if (!folder) {
+		QJsonArray extraPinned;
+		_session->data()._extraPinnedChats.clear();
+		for (int i = sendCount; i < order.size(); ++i) {
+			QString str;
+			if (const auto history = order[i].history()) {
+				str = "peer:" + QString::number(history->peer->id.value);
+			} else if (const auto f = order[i].folder()) {
+				str = "folder:" + QString::number(f->id());
+			}
+			if (!str.isEmpty()) {
+				extraPinned.append(str);
+				_session->data()._extraPinnedChats.push_back(str);
+			}
+		}
+		_session->data()._extraPinnedChatsLoaded = true;
+		QJsonObject root;
+		root["extra_pinned"] = extraPinned;
+		QJsonDocument doc(root);
+		QFile file(_session->local().basePath() + "pinned_chats.json");
+		if (file.open(QIODevice::WriteOnly)) {
+			file.write(doc.toJson());
+		}
+	}
+
 	request(MTPmessages_ReorderPinnedDialogs(
 		MTP_flags(MTPmessages_ReorderPinnedDialogs::Flag::f_force),
 		MTP_int(folder ? folder->id() : 0),
@@ -3485,6 +3523,22 @@ void ApiWrap::forwardMessages(
 	ids.reserve(count);
 	randomIds.reserve(count);
 	for (const auto item : draft.items) {
+		const auto sourcePeer = item->history()->peer;
+		auto restricted = false;
+		if (const auto channel = sourcePeer->asChannel()) {
+			restricted = !channel->allowsForwarding();
+		} else if (const auto chat = sourcePeer->asChat()) {
+			restricted = !chat->allowsForwarding();
+		}
+
+		if (restricted) {
+			if (!ids.empty()) {
+				sendAccumulated();
+			}
+			copyForwardItem(item, action, draft.options);
+			continue;
+		}
+
 		const auto randomId = base::RandomValue<uint64>();
 		if (genClientSideMessage) {
 			const auto newId = FullMsgId(
@@ -3512,7 +3566,7 @@ void ApiWrap::forwardMessages(
 			}
 			localIds->emplace(randomId, newId);
 		}
-		const auto newFrom = item->history()->peer;
+		const auto newFrom = sourcePeer;
 		if (forwardFrom != newFrom) {
 			sendAccumulated();
 			forwardFrom = newFrom;
@@ -3522,6 +3576,34 @@ void ApiWrap::forwardMessages(
 	}
 	sendAccumulated();
 	_session->data().sendHistoryChangeNotifications();
+}
+
+void ApiWrap::copyForwardItem(
+		not_null<HistoryItem*> item,
+		const SendAction &action,
+		Data::ForwardOptions options) {
+	const auto media = item->media();
+	const auto photo = media ? media->photo() : nullptr;
+	const auto document = media ? media->document() : nullptr;
+
+	auto message = Api::MessageToSend(action);
+	message.action.clearDraft = false;
+
+	if (options != Data::ForwardOptions::NoNamesAndCaptions) {
+		const auto &original = item->originalText();
+		message.textWithTags = TextWithTags{
+			original.text,
+			TextUtilities::ConvertEntitiesToTextTags(original.entities),
+		};
+	}
+
+	if (photo) {
+		Api::SendExistingPhoto(std::move(message), photo);
+	} else if (document) {
+		Api::SendExistingDocument(std::move(message), document);
+	} else if (!message.textWithTags.text.isEmpty()) {
+		sendMessage(std::move(message));
+	}
 }
 
 void ApiWrap::shareContact(

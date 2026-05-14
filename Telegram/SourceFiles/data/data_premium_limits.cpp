@@ -113,10 +113,22 @@ int PremiumLimits::dialogFiltersLinksCurrent() const {
 }
 
 int PremiumLimits::dialogsPinnedDefault() const {
-	return appConfigLimit("dialogs_pinned_limit_default", 5);
+	return 15;
 }
 int PremiumLimits::dialogsPinnedPremium() const {
+	return 15;
+}
+
+int PremiumLimits::dialogsPinnedOfficialDefault() const {
+	return appConfigLimit("dialogs_pinned_limit_default", 5);
+}
+int PremiumLimits::dialogsPinnedOfficialPremium() const {
 	return appConfigLimit("dialogs_pinned_limit_premium", 10);
+}
+int PremiumLimits::dialogsPinnedOfficialCurrent() const {
+	return isPremium()
+		? dialogsPinnedOfficialPremium()
+		: dialogsPinnedOfficialDefault();
 }
 int PremiumLimits::dialogsPinnedCurrent() const {
 	return isPremium()

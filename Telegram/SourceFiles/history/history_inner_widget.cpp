@@ -2819,10 +2819,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					reportItem(itemId);
 				}, &st::menuIconReport);
 			}
-				if (item->isRegular()) {
+				if (item->isRegular()
+					&& (item->history()->peer->isChat()
+						|| item->history()->peer->isChannel())) {
 					_menu->addAction(u"Mark as Garbage"_q, [=] {
 						if (const auto item = session->data().message(itemId)) {
-							MsgFilter::Instance().appendToFilter(item);
+							MsgFilter::HashFilter::Instance().appendToFilter(item);
 						}
 					}, &st::menuIconDelete);
 				}
@@ -3077,10 +3079,12 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 					reportAsGroup(itemId);
 				}, &st::menuIconReport);
 			}
-				if (item->isRegular()) {
+				if (item->isRegular()
+					&& (item->history()->peer->isChat()
+						|| item->history()->peer->isChannel())) {
 					_menu->addAction(u"Mark as Garbage"_q, [=] {
 						if (const auto item = session->data().message(itemId)) {
-							MsgFilter::Instance().appendToFilter(item);
+							MsgFilter::HashFilter::Instance().appendToFilter(item);
 						}
 					}, &st::menuIconDelete);
 				}

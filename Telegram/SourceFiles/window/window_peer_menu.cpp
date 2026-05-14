@@ -96,6 +96,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "export/export_manager.h"
 #include "boxes/peers/edit_peer_info_box.h"
+#include "msg_filter/msg_filter.h"
 #include "styles/style_chat.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -295,6 +296,7 @@ private:
 	void addViewDiscussion();
 	void addDirectMessages();
 	void addToggleTopicClosed();
+	void addToggleDedup();
 	void addExportChat();
 	void addTranslate();
 	void addReport();
@@ -893,6 +895,19 @@ void Filler::addDirectMessages() {
 	}, &st::menuIconChatDiscuss);
 }
 
+void Filler::addToggleDedup() {
+	const auto chat = _peer->asChat();
+	const auto channel = _peer->asChannel();
+	if (!chat && !channel) {
+		return;
+	}
+	const auto peer = _peer;
+	const auto enabled = MsgFilter::HashFilter::Instance().isDedupEnabledFor(peer->id);
+	_addAction(enabled ? "Disable Dedup" : "Enable Dedup", [=] {
+		MsgFilter::HashFilter::Instance().setDedupEnabledFor(peer->id, !enabled);
+	}, enabled ? &st::menuIconUnpin : &st::menuIconPin);
+}
+
 void Filler::addExportChat() {
 	if (_thread->asTopic() || !_peer->canExportChatHistory()) {
 		return;
@@ -1412,6 +1427,7 @@ void Filler::fillChatsListActions() {
 	if (all.size() > kTopicsSearchMinCount) {
 		addSearchTopics();
 	}
+	addToggleDedup();
 	addManageChat();
 	addNewMembers();
 	addBoostChat();
@@ -1460,6 +1476,7 @@ void Filler::fillContextMenuActions() {
 	addToggleUnreadMark();
 	addToggleTopicClosed();
 	addToggleFolder();
+	addToggleDedup();
 	if (const auto user = _peer->asUser()) {
 		if (!user->isContact()) {
 			addBlockUser();
@@ -1477,6 +1494,7 @@ void Filler::fillHistoryActions() {
 	addInfo();
 	addViewAsTopics();
 	addManageChat();
+	addToggleDedup();
 	addStoryArchive();
 	addSupportInfo();
 	addBoostChat();
@@ -1511,6 +1529,7 @@ void Filler::fillProfileActions() {
 	addDirectMessages();
 	addExportChat();
 	addToggleFolder();
+	addToggleDedup();
 	addBlockUser();
 	addReport();
 	addLeaveChat();

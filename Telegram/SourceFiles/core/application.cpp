@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_integration.h"
 #include "history/history.h"
 #include "msg_filter/msg_filter.h"
+#include "msg_filter/background_scanner.h"
 #include "apiwrap.h"
 #include "api/api_updates.h"
 #include "calls/calls_instance.h"
@@ -810,8 +811,13 @@ void Application::startLocalStorage() {
 		saveSettingsDelayed();
 	}, _lifetime);
 
-	// Load MD5 filter at startup
-	MsgFilter::Instance().loadFromDefaultLocation();
+	// Load message filter at startup (tdata/msg_filter.json).
+	MsgFilter::HashFilter::Instance().loadFromDefaultLocation();
+
+	// Kick off the periodic background ad-detective task. It schedules
+	// itself once per 24h and yields back to the event loop between
+	// slices, throttling on CPU pressure.
+	MsgFilter::BackgroundScanner::Instance().start();
 }
 
 void Application::startEmojiImageLoader() {

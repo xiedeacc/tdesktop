@@ -94,6 +94,7 @@ menuIconAddToFolder: icon {{ "menu/add_to_folder", menuIconColor }};
 menuIconLeave: icon {{ "menu/leave", menuIconColor }};
 menuIconGiftPremium: icon {{ "menu/gift_premium", menuIconColor }};
 menuIconSearch: icon {{ "menu/search", menuIconColor }};
+menuIconScanCircle: icon {{ "menu/scan_circle", menuIconColor }};
 menuIconStartStream: icon {{ "menu/start_stream", menuIconColor }};
 menuIconStartStreamWith: icon {{ "menu/start_stream_with", menuIconColor }};
 menuIconVideoChat: icon {{ "menu/video_chat", menuIconColor }};

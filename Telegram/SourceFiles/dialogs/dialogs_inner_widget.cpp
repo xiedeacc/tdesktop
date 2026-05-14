@@ -63,6 +63,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "apiwrap.h"
 #include "main/main_session.h"
+#include "msg_filter/background_scanner.h"
+#include "msg_filter/cleanup.h"
+#include "msg_filter/msg_filter.h"
 #include "main/main_session_settings.h"
 #include "menu/menu_sponsored.h"
 #include "window/notifications_manager.h"
@@ -70,6 +73,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
 #include "ui/chat/chats_filter_tag.h"
+#include "ui/effects/radial_animation.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/effects/loading_element.h"
 #include "ui/widgets/multi_select.h"
@@ -306,6 +310,65 @@ InnerWidget::InnerWidget(
 	) | rpl::start_with_next([=] {
 		update();
 	}, lifetime());
+
+	{
+		// Subscribe to MsgFilter background scanner progress: an
+		// animated radial spinner pins itself to the top-right of the
+		// visible viewport while a scan is running, and the currently
+		// inspected peer's row gets its own spinner-on-strip marker.
+		// Toasts on start/finish guarantee a visible signal even when
+		// the sweep completes faster than the badge is perceivable.
+		auto &scanner = MsgFilter::BackgroundScanner::Instance();
+		const auto applyRunning = [=](bool running) {
+			_scannerRunning = running;
+			if (running) {
+				if (!_scannerSpinner) {
+					_scannerSpinner
+						= std::make_unique<Ui::InfiniteRadialAnimation>(
+							[=] { update(); },
+							st::dialogsLoadMoreLoading);
+				}
+				_scannerSpinner->start();
+			} else if (_scannerSpinner) {
+				_scannerSpinner->stop();
+			}
+			update();
+		};
+		applyRunning(scanner.running());
+		_scannerCurrentPeer = scanner.currentPeer();
+		scanner.runningChanges(
+		) | rpl::start_with_next([=](bool running) {
+			applyRunning(running);
+			auto &s = MsgFilter::BackgroundScanner::Instance();
+			if (running) {
+				_controller->showToast(
+					u"Ad scan started: %1 peers queued"_q
+						.arg(s.peersTotal()));
+			} else {
+				_controller->showToast(
+					u"Ad scan done: %1 msgs across %2 peers, %3 hits"_q
+						.arg(s.processedTotal())
+						.arg(s.peersTotal())
+						.arg(s.matchedTotal()));
+			}
+		}, lifetime());
+		scanner.currentPeerChanges(
+		) | rpl::start_with_next([=](PeerId peer) {
+			const auto prev = _scannerCurrentPeer;
+			_scannerCurrentPeer = peer;
+			const auto invalidate = [&](PeerId id) {
+				if (!id) {
+					return;
+				}
+				if (const auto history
+						= session().data().historyLoaded(id)) {
+					updateDialogRow(RowDescriptor(history, FullMsgId()));
+				}
+			};
+			invalidate(prev);
+			invalidate(peer);
+		}, lifetime());
+	}
 
 	Core::App().notifications().settingsChanged(
 	) | rpl::start_with_next([=](Window::Notifications::ChangeType change) {
@@ -965,6 +1028,30 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		if (context.quickActionContext) {
 			context.quickActionContext = nullptr;
 		}
+		// MsgFilter scanner: a 3px accent strip on the left edge plus
+		// an animated radial spinner mark the peer that is currently
+		// being inspected by the background detective task.
+		if (_scannerRunning
+			&& _scannerCurrentPeer
+			&& history
+			&& history->peer->id == _scannerCurrentPeer) {
+			PainterHighQualityEnabler hq(p);
+			const auto rowHeight = context.st->height;
+			const auto barWidth = style::ConvertScale(3);
+			p.fillRect(
+				QRect(0, 0, barWidth, rowHeight),
+				st::msgFileInBg);
+			if (_scannerSpinner) {
+				const auto size = st::dialogsLoadMoreLoading.size;
+				const auto spinX = barWidth + style::ConvertScale(2);
+				const auto spinY = (rowHeight - size.height()) / 2;
+				_scannerSpinner->draw(
+					p,
+					QPoint(spinX, spinY),
+					size,
+					width());
+			}
+		}
 	};
 	if (_state == WidgetState::Default) {
 		const auto collapsedSkip = collapsedRowsOffset();
@@ -1338,6 +1425,56 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 				}
 			}
 		}
+	}
+
+	// MsgFilter scanner: sticky animated badge at the top-right of the
+	// visible viewport while a scan is in flight. A rounded pill houses
+	// a radial spinner plus the literal text "Scanning…" so users have
+	// a clear "ad detective working" signal even with the panel scrolled
+	// or the active peer offscreen. Reset the painter transform first
+	// since the state-specific branches above translate `p` as they walk
+	// rows.
+	if (_scannerRunning && _scannerSpinner) {
+		p.save();
+		p.resetTransform();
+		PainterHighQualityEnabler hq(p);
+		const auto pad = style::ConvertScale(6);
+		const auto spinnerSize = st::dialogsLoadMoreLoading.size;
+		const auto inset = style::ConvertScale(4);
+		const auto gap = style::ConvertScale(6);
+		const auto label = u"Scanning…"_q;
+		p.setFont(st::semiboldFont);
+		const auto fm = p.fontMetrics();
+		const auto labelWidth = fm.horizontalAdvance(label);
+		const auto pillHeight = spinnerSize.height() + inset * 2;
+		const auto pillWidth = inset
+			+ spinnerSize.width()
+			+ gap
+			+ labelWidth
+			+ inset;
+		const auto pillX = fullWidth - pillWidth - pad;
+		const auto pillY = _visibleTop + pad;
+		const auto radius = pillHeight / 2.;
+		auto bg = st::msgFileInBg->c;
+		bg.setAlphaF(0.85);
+		p.setPen(Qt::NoPen);
+		p.setBrush(bg);
+		p.drawRoundedRect(
+			QRectF(pillX, pillY, pillWidth, pillHeight),
+			radius,
+			radius);
+		_scannerSpinner->draw(
+			p,
+			QPoint(pillX + inset, pillY + inset),
+			spinnerSize,
+			fullWidth);
+		p.setPen(st::historyFileInIconFg);
+		p.drawText(
+			QPointF(
+				pillX + inset + spinnerSize.width() + gap,
+				pillY + (pillHeight + fm.ascent() - fm.descent()) / 2.),
+			label);
+		p.restore();
 	}
 }
 
@@ -3202,6 +3339,60 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 				.filterId = _filterId,
 			},
 			addAction);
+		// Per-peer "Disable ad filter" kill switch. The standard filter
+		// runs across every peer with a RealTime entry; this toggle lets
+		// the user keep all messages for a single peer visible without
+		// touching the global rules. The filter is a no-op for 1-on-1
+		// chats so the toggle would be meaningless there — hide it.
+		if (const auto peer = row.key.peer();
+				peer && (peer->isChat() || peer->isChannel())) {
+			const auto peerId = peer->id;
+			auto &filter = MsgFilter::HashFilter::Instance();
+			const auto disabled = filter.isDisabledFor(peerId);
+			addAction(
+				disabled
+					? u"Enable ad filter"_q
+					: u"Disable ad filter"_q,
+				[=] {
+					MsgFilter::HashFilter::Instance().setDisabledFor(
+						peerId,
+						!disabled);
+				},
+				disabled ? &st::menuIconUnmute : &st::menuIconMute);
+		}
+		// Per-account bulk cleanup helpers exposed by msg_filter. These
+		// operate on the whole chat list rather than the clicked row, but
+		// live in the chat-list context menu for discoverability.
+		if (_state == WidgetState::Default) {
+			_menu->addSeparator();
+			const auto controller = _controller;
+			addAction(
+				u"Clear all deleted account chats"_q,
+				[=] { MsgFilter::ClearDeletedAccountChats(controller); },
+				&st::menuIconDelete);
+			addAction(
+				u"Mute all channels"_q,
+				[=] { MsgFilter::MuteAllChannels(controller); },
+				&st::menuIconMute);
+			addAction(
+				u"Mute all chats"_q,
+				[=] { MsgFilter::MuteAllChats(controller); },
+				&st::menuIconMute);
+			// Manual trigger for the background detective task. The
+			// incremental "Run ad scan now" was removed because the
+			// per-peer "skip if msgId unchanged" optimisation makes it
+			// finish instantly almost every time — when a user invokes
+			// it manually, what they actually want is a full sweep.
+			auto &scanner = MsgFilter::BackgroundScanner::Instance();
+			addAction(
+				scanner.running()
+					? u"Ad scan running…"_q
+					: u"Force full ad scan now"_q,
+				[] {
+					MsgFilter::BackgroundScanner::Instance().runFullNow();
+				},
+				&st::menuIconRestore);
+		}
 	}
 	QObject::connect(_menu.get(), &QObject::destroyed, [=] {
 		if (_menuRow.key) {
@@ -3762,8 +3953,16 @@ rpl::producer<> InnerWidget::refreshHashtagsRequests() const {
 void InnerWidget::visibleTopBottomUpdated(
 		int visibleTop,
 		int visibleBottom) {
+	const auto topChanged = (_visibleTop != visibleTop);
 	_visibleTop = visibleTop;
 	_visibleBottom = visibleBottom;
+	if (_scannerRunning && topChanged) {
+		// The "scanning" pill is anchored to the visible viewport, so a
+		// scroll moves where it must appear. Force a repaint to clear
+		// the previous position (Qt's optimized scroll won't repaint
+		// already-mapped pixels by itself).
+		update();
+	}
 	preloadRowsData();
 	const auto loadTill = _visibleTop
 		+ PreloadHeightsCount * (_visibleBottom - _visibleTop);

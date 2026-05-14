@@ -460,6 +460,10 @@ public:
 	void applyPinnedChats(
 		Folder *folder,
 		const QVector<MTPDialogPeer> &list);
+	
+	void loadExtraPinnedChats();
+	std::vector<QString> _extraPinnedChats;
+	bool _extraPinnedChatsLoaded = false;
 	void applyPinnedTopics(
 		not_null<Forum*> forum,
 		const QVector<MTPint> &list);
