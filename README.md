@@ -1,4 +1,6 @@
-# [Telegram Desktop][telegram_desktop] – Official Messenger
+# [Telegram Desktop][telegram_desktop] – With Ad Filter Support
+
+**Note: This fork natively supports advertisement message filtering and deduplication within channels and groups.**
 
 This is the complete source code and the build instructions for the official [Telegram][telegram] messenger desktop client, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
 
