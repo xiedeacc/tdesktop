@@ -1027,22 +1027,26 @@ bool HashFilter::applyDedup(
 	auto firstItem = items.front();
 	const auto media = firstItem->media();
 	const auto photo = media ? media->photo() : nullptr;
-	if (!photo) {
-		return false;
+	const auto document = media ? media->document() : nullptr;
+
+	uint64 mediaId = 0;
+	if (photo && photo->id) {
+		mediaId = photo->id;
+	} else if (document && document->id) {
+		const auto docKind = ClassifyDocument(document);
+		if (docKind == DocKind::Video || docKind == DocKind::Other) {
+			mediaId = document->id;
+		}
 	}
 
-	auto mediaView = photo->createMediaView();
-	const auto computed = TryComputeHashesNow(mediaView);
-	if (!computed.valid()) {
+	if (!mediaId) {
 		return false;
 	}
-
-	QByteArray mediaId = computed.blake3hex;
 
 	if (fullId.msg.bare == 1796305 || fullId.msg.bare == 1799339) {
-		DebugLog(u"[INVESTIGATE-DEDUP] msgId=%1 mediaIds=%2 enabled=%3"_q
+		DebugLog(u"[INVESTIGATE-DEDUP] msgId=%1 mediaId=%2 enabled=%3"_q
 			.arg(fullId.msg.bare)
-			.arg(QString::fromLatin1(mediaId.toHex()))
+			.arg(mediaId)
 			.arg(entry->enabled ? 1 : 0));
 	}
 
@@ -1061,7 +1065,7 @@ bool HashFilter::applyDedup(
 			DebugLog(u"[DEDUP-HIDE] peer=%1 msgId=%2 mediaId=%3 mappedTo=%4 items=%5"_q
 				.arg(peer.value)
 				.arg(fullId.msg.bare)
-				.arg(QString::fromLatin1(mediaId.toHex()))
+				.arg(mediaId)
 				.arg(it->second.bare)
 				.arg(itemsList));
 			HideItem(item);

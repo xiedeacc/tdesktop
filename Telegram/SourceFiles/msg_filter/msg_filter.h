@@ -177,8 +177,8 @@ private:
 
 	struct DedupPeer {
 		bool enabled = false;
-		std::deque<QByteArray> mediaIdsList;
-		base::flat_map<QByteArray, MsgId> mediaIdToMsgId;
+		std::deque<uint64> mediaIdsList;
+		base::flat_map<uint64, MsgId> mediaIdToMsgId;
 
 		[[nodiscard]] bool empty() const {
 			return !enabled && mediaIdsList.empty();
