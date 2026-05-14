@@ -856,11 +856,11 @@ bool HashFilter::applyPerPeer(
 		const auto photo = media ? media->photo() : nullptr;
 		const auto document = media ? media->document() : nullptr;
 
-		bool isTarget = (i->fullId().msg.bare == 5618 || i->fullId().msg.bare == 10050);
+		bool isTarget = (i->fullId().msg.bare == 1796305 || i->fullId().msg.bare == 1799339);
 		if (!isTarget) {
 			if (const auto group = i->history()->owner().groups().find(i)) {
 				for (const auto &sibling : group->items) {
-					if (sibling->fullId().msg.bare == 5618 || sibling->fullId().msg.bare == 10050) {
+					if (sibling->fullId().msg.bare == 1796305 || sibling->fullId().msg.bare == 1799339) {
 						isTarget = true;
 						break;
 					}
@@ -1015,66 +1015,64 @@ bool HashFilter::applyDedup(
 	const auto fullId = item->fullId();
 	const auto peer = item->history()->peer->id;
 
-	auto getMediaIds = [&](not_null<HistoryItem*> i, std::vector<uint64> &out) {
-		const auto media = i->media();
-		const auto photo = media ? media->photo() : nullptr;
-		const auto document = media ? media->document() : nullptr;
-		if (photo && photo->id) out.push_back(photo->id);
-		if (document && document->id) {
-			const auto docKind = ClassifyDocument(document);
-			if (docKind == DocKind::Video || docKind == DocKind::Other) { // "photos or videos"
-				out.push_back(document->id);
-			}
-		}
-	};
-
-	auto mediaIds = std::vector<uint64>();
-	getMediaIds(item, mediaIds);
+	auto items = HistoryItemsList{ item };
 	if (const auto group = item->history()->owner().groups().find(item)) {
-		for (const auto &sibling : group->items) {
-			if (sibling != item) getMediaIds(sibling, mediaIds);
-		}
+		items = group->items;
 	}
 
-	if (mediaIds.empty()) {
+	if (items.empty()) {
 		return false;
 	}
 
-	bool isDuplicate = false;
-	for (uint64 mediaId : mediaIds) {
-		auto &msgIds = entry->mediaToMsgIds[mediaId];
-		auto it = std::lower_bound(msgIds.begin(), msgIds.end(), fullId.msg);
-		
-		auto nextIt = it;
-		if (nextIt != msgIds.end() && *nextIt == fullId.msg) {
-			++nextIt;
-		}
-		if (nextIt != msgIds.end() && (nextIt->bare - fullId.msg.bare) <= 10000) {
-			isDuplicate = true;
-			break;
-		}
-		
-		if (it != msgIds.begin()) {
-			auto prevIt = it;
-			--prevIt;
-			if ((fullId.msg.bare - prevIt->bare) <= 10000) {
-				isDuplicate = true;
+	auto firstItem = items.front();
+	const auto media = firstItem->media();
+	const auto photo = media ? media->photo() : nullptr;
+	if (!photo) {
+		return false;
+	}
+
+	auto mediaView = photo->createMediaView();
+	const auto computed = TryComputeHashesNow(mediaView);
+	if (!computed.valid()) {
+		return false;
+	}
+
+	QByteArray mediaId = computed.blake3hex;
+
+	if (fullId.msg.bare == 1796305 || fullId.msg.bare == 1799339) {
+		DebugLog(u"[INVESTIGATE-DEDUP] msgId=%1 mediaIds=%2 enabled=%3"_q
+			.arg(fullId.msg.bare)
+			.arg(QString::fromLatin1(mediaId.toHex()))
+			.arg(entry->enabled ? 1 : 0));
+	}
+
+	auto it = entry->mediaIdToMsgId.find(mediaId);
+	if (it != entry->mediaIdToMsgId.end()) {
+		bool isSameMessage = false;
+		for (const auto &i : items) {
+			if (i->fullId().msg == it->second) {
+				isSameMessage = true;
 				break;
 			}
 		}
-	}
-
-	if (isDuplicate) {
-		DebugLog(u"[DEDUP-HIDE] peer=%1 msgId=%2"_q.arg(peer.value).arg(fullId.msg.bare));
-		HideItem(item);
-		return true;
-	}
-
-	for (uint64 mediaId : mediaIds) {
-		auto &msgIds = entry->mediaToMsgIds[mediaId];
-		auto it = std::lower_bound(msgIds.begin(), msgIds.end(), fullId.msg);
-		if (it == msgIds.end() || *it != fullId.msg) {
-			msgIds.insert(it, fullId.msg);
+		if (!isSameMessage) {
+			QString itemsList;
+			for (const auto &i : items) itemsList += QString::number(i->fullId().msg.bare) + ",";
+			DebugLog(u"[DEDUP-HIDE] peer=%1 msgId=%2 mediaId=%3 mappedTo=%4 items=%5"_q
+				.arg(peer.value)
+				.arg(fullId.msg.bare)
+				.arg(QString::fromLatin1(mediaId.toHex()))
+				.arg(it->second.bare)
+				.arg(itemsList));
+			HideItem(item);
+			return true;
+		}
+	} else {
+		entry->mediaIdToMsgId.emplace(mediaId, fullId.msg);
+		entry->mediaIdsList.push_back(mediaId);
+		if (entry->mediaIdsList.size() > 10000) {
+			entry->mediaIdToMsgId.erase(entry->mediaIdsList.front());
+			entry->mediaIdsList.pop_front();
 		}
 	}
 
@@ -1085,7 +1083,7 @@ void HashFilter::applyToItem(not_null<HistoryItem*> item) {
 	const auto peerPtr = item->history()->peer;
 	const auto fullId = item->fullId();
 	
-	if (fullId.msg.bare == 5618 || fullId.msg.bare == 10050) {
+	if (fullId.msg.bare == 1796305 || fullId.msg.bare == 1799339) {
 		const auto media = item->media();
 		const auto photo = media ? media->photo() : nullptr;
 		DebugLog(u"[INVESTIGATE-GLOBAL] peer=%1 msgId=%2 photoId=%3"_q
@@ -1102,7 +1100,7 @@ void HashFilter::applyToItem(not_null<HistoryItem*> item) {
 	const auto peer = peerPtr->id;
 	const auto entry = filter.findFor(peer);
 	
-	if (fullId.msg.bare == 5618 || fullId.msg.bare == 10050) {
+	if (fullId.msg.bare == 1796305 || fullId.msg.bare == 1799339) {
 		DebugLog(u"[INVESTIGATE-ENTRY] msgId=%1 hasEntry=%2"_q
 			.arg(fullId.msg.bare)
 			.arg(entry ? 1 : 0));

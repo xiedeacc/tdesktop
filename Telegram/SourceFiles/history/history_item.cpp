@@ -1318,6 +1318,9 @@ uint8 HistoryItem::contentColorIndex() const {
 std::unique_ptr<HistoryView::Element> HistoryItem::createView(
 		not_null<HistoryView::ElementDelegate*> delegate,
 		HistoryView::Element *replacing) {
+	if (isRegular()) {
+		History::applyMsgFilter(this);
+	}
 	if (isService()) {
 		return std::make_unique<HistoryView::Service>(
 			delegate,

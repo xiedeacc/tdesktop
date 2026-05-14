@@ -23,6 +23,8 @@ namespace Main {
 class Session;
 } // namespace Main
 
+#include <deque>
+
 namespace MsgFilter {
 
 class HashFilter final {
@@ -175,10 +177,11 @@ private:
 
 	struct DedupPeer {
 		bool enabled = false;
-		base::flat_map<uint64, std::vector<MsgId>> mediaToMsgIds;
+		std::deque<QByteArray> mediaIdsList;
+		base::flat_map<QByteArray, MsgId> mediaIdToMsgId;
 
 		[[nodiscard]] bool empty() const {
-			return !enabled && mediaToMsgIds.empty();
+			return !enabled && mediaIdsList.empty();
 		}
 	};
 
